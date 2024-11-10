@@ -1,13 +1,13 @@
 import pygame
-import sys
 import numpy as np
 from moviepy.editor import VideoFileClip
 from settings import *
 from player import Player
+from ability import Ability
 from sprites import *
 from pytmx.util_pygame import load_pygame
 from groups import AllSprites
-from random import randint, choice
+from random import choice
 
 class Game:
     def __init__(self):
@@ -21,6 +21,7 @@ class Game:
         self.collision_sprites = pygame.sprite.Group()
         self.bullet_sprites = pygame.sprite.Group()
         self.enemy_sprites = pygame.sprite.Group()
+        self.ability_sprites = pygame.sprite.Group()
 
         self.can_shoot = True
         self.shoot_time = 0 
@@ -29,6 +30,7 @@ class Game:
         self.enemy_event = pygame.event.custom_type()
         pygame.time.set_timer(self.enemy_event, 500)
         self.spawn_positions = []
+        self.ability_drop = []
 
         self.shoot_sound = pygame.mixer.Sound(join('audio', 'shoot.wav'))
         self.shoot_sound.set_volume(0.2)
@@ -76,9 +78,15 @@ class Game:
         self.game_over_sound_played = False  
 
         self.score = 0 
-        self.font = pygame.font.Font(join('fonts','PixelifySans.ttf'), FONT_SIZE) 
-        self.countdown_font = pygame.font.Font(join('fonts', 'PixelifySans.ttf'), 72)
-        self.time_font = pygame.font.Font(join('fonts', 'PixelifySans.ttf'), 24)
+        self.font = pygame.font.Font(join('fonts','upheavtt.ttf'), FONT_SIZE) 
+        self.countdown_font = pygame.font.Font(join('fonts', 'Mario-Kart-DS.ttf'), 72)
+        self.time_font = pygame.font.Font(join ('fonts', 'Mario-Kart-DS.ttf'), 24)
+        self.boost_font = pygame.font.Font(join ('fonts', 'Mario-Kart-DS.ttf'), 30)
+        
+        self.heal_text = None  
+        self.heal_text_opacity = 255  
+        self.heal_text_start_time = 0  
+        self.heal_text_duration = 1000
         
         self.hit_enemies = set() 
         self.frame_delay = FRAME_DELAY
@@ -97,8 +105,14 @@ class Game:
         self.clock_icon = pygame.transform.scale(self.clock_icon, (30, 30))  
 
         self.star_icon = pygame.image.load(join('menu', 'star.png')).convert_alpha()
-        self.star_icon = pygame.transform.scale(self.star_icon, (45, 45))  
-
+        self.star_icon = pygame.transform.scale(self.star_icon, (45, 45)) 
+        
+        self.ability_icons = {
+            'heal': pygame.image.load(join('images', 'ability', 'heal.png')).convert_alpha(),
+            'speed': pygame.image.load(join('images', 'ability', 'speed.png')).convert_alpha(),
+            'invincibility': pygame.image.load(join('images', 'ability', 'kebal.png')).convert_alpha(),
+        }
+    
         self.main_menu_sound.play()
         self.main_menu_sound.set_volume(0.4)
 
@@ -107,6 +121,12 @@ class Game:
         self.current_wave = 1
         self.wave_active = False
 
+        self.ability_spawn_times = {} 
+        self.ability_spawn_time = 0  
+        self.ability_spawn_interval = ABILITY_DELAY
+        self.ability_respawn_timer = {} 
+        self.ability_respawn_delay = ABILITY_DELAY
+        
     def play_background_video(self):
         clip = VideoFileClip("menu/background.mp4")
         fps = clip.fps
@@ -151,6 +171,10 @@ class Game:
         
         for obj in map.get_layer_by_name('Collisions'):
             CollisionSprite((obj.x, obj.y), pygame.Surface((obj.width, obj.height)), self.collision_sprites)
+            
+        for obj in map.get_layer_by_name('Ability'):
+            if obj.name == 'Drop':
+                self.ability_drop.append((obj.x, obj.y))
 
         for obj in map.get_layer_by_name('Entities'):
             if obj.name == 'Player':
@@ -158,6 +182,45 @@ class Game:
                 self.gun = Gun(self.player, self.all_sprites)
             else:
                 self.spawn_positions.append((obj.x, obj.y))
+
+    def spawn_ability(self):
+        available_spawn_points = [pos for pos in self.ability_drop if pos not in self.ability_spawn_times]
+        
+        existing_abilities = [ability.rect.topleft for ability in self.ability_sprites]
+
+        available_spawn_points = [pos for pos in available_spawn_points if pos not in existing_abilities]
+
+        if available_spawn_points:
+            spawn_pos = choice(available_spawn_points)
+            ability_type = choice(['heal', 'speed', 'invincibility'])
+            new_ability = Ability(spawn_pos, ability_type, self.ability_sprites)
+            self.all_sprites.add(new_ability)
+            self.ability_spawn_times[spawn_pos] = pygame.time.get_ticks()  
+        else:
+            for spawn_pos in self.ability_drop:
+                if spawn_pos in self.ability_respawn_timer:
+                    if pygame.time.get_ticks() - self.ability_respawn_timer[spawn_pos] >= self.ability_respawn_delay * 1000:
+                        del self.ability_respawn_timer[spawn_pos]
+
+    def update(self):
+        current_time = pygame.time.get_ticks()
+        
+        if self.heal_text:
+            elapsed_time = current_time - self.heal_text_start_time
+            if elapsed_time < self.heal_text_duration:
+                self.heal_text_opacity = max(0, 255 - (255 * elapsed_time / self.heal_text_duration))  
+            else:
+                self.heal_text = None
+        
+        # self.player.active_abilities = [(ability, duration) for ability, duration in self.player.active_abilities if duration > (current_time - self.start_time) // 1000]
+        
+        for spawn_pos in list(self.ability_spawn_times.keys()):
+            if current_time - self.ability_spawn_times[spawn_pos] >= self.ability_spawn_interval * 1000:
+                del self.ability_spawn_times[spawn_pos]  
+                
+        for spawn_pos in self.ability_drop:
+            if spawn_pos not in self.ability_spawn_times and spawn_pos not in self.ability_respawn_timer:
+                self.ability_respawn_timer[spawn_pos] = current_time  
 
     def bullet_collision(self):
         if self.bullet_sprites:
@@ -187,7 +250,32 @@ class Game:
                     self.game_over_sound_played = True  
         else:
             self.damage_taken = False
-            
+
+        collected_abilities = pygame.sprite.spritecollide(self.player, self.ability_sprites, True)
+        for ability in collected_abilities:
+            self.collect_ability(ability)
+
+    def collect_ability(self, ability):
+        current_time = pygame.time.get_ticks()  
+        if ability.ability_type == 'heal':
+            self.player.heal(10)
+            self.heal_text = "10"  
+            self.heal_text_start_time = current_time  
+            self.heal_text_opacity = 255
+        elif ability.ability_type == 'speed':
+            if not any(a[0] == 'speed' for a in self.player.active_abilities):
+                self.player.increase_speed(100, 10)
+                self.player.active_abilities.append((ability.ability_type, current_time)) 
+        elif ability.ability_type == 'invincibility':
+            if not any(a[0] == 'invincibility' for a in self.player.active_abilities):
+                self.player.activate_invincibility(10)
+                self.player.active_abilities.append((ability.ability_type, current_time)) 
+
+        for spawn_pos in self.ability_drop:
+            if spawn_pos in self.ability_spawn_times:
+                del self.ability_spawn_times[spawn_pos]  
+                self.ability_respawn_timer[spawn_pos] = pygame.time.get_ticks()  
+
     def draw_health_bar(self):
         health_ratio = self.player.current_health / self.player.max_health
         
@@ -201,37 +289,67 @@ class Game:
         pygame.draw.rect(self.display_surface, (0, 255, 0), (HEALTH_X, HEALTH_Y, HEALTH_WIDTH * health_ratio, HEALTH_HEIGHT))
 
         self.display_surface.blit(self.heart_icon, (HEALTH_X - 20, HEALTH_Y - 15)) 
+        
+        if self.heal_text:
+            font = pygame.font.Font(join('fonts', 'Mario-Kart-DS.ttf'), 24)  
+            heal_surface = font.render(self.heal_text, True, (255, 255, 255, self.heal_text_opacity))  
+            heal_rect = heal_surface.get_rect(topleft=(HEALTH_X + HEALTH_WIDTH + 10, HEALTH_Y))  
+            heal_surface.set_alpha(self.heal_text_opacity) 
+            self.display_surface.blit(heal_surface, heal_rect)
+        
+    def draw_active_abilities(self):
+        y_offset = HEALTH_Y + HEALTH_HEIGHT + 30 
+        current_time = pygame.time.get_ticks()  
+
+        for ability, start_time in self.player.active_abilities:
+            if ability in ['speed', 'invincibility']:
+                remaining_time = max(0, 10 - (current_time - start_time) // 1000)  
+
+                if remaining_time > 0:  
+                    icon = self.ability_icons.get(ability)
+                    if icon:
+                        icon = pygame.transform.scale(icon, (30, 30))  
+                        self.display_surface.blit(icon, (HEALTH_X, y_offset))  
+
+                    formatted_duration = self.format_time(remaining_time)
+
+                    ability_surface = self.boost_font.render(formatted_duration, True, (0, 0, 0))
+                    outline_surface = self.boost_font.render(formatted_duration, True, (255, 255, 255))  
+                    self.display_surface.blit(outline_surface, (HEALTH_X + 38, y_offset + 2))  
+                    self.display_surface.blit(ability_surface, (HEALTH_X + 38, y_offset))  
+
+                    y_offset += 40  
 
     def draw_score_and_time(self):
-        score_surface = self.font.render(f'Score: {self.score}', True, (255, 255, 255)) 
+        score_surface = self.font.render(f'Score {self.score}', True, (255, 255, 255)) 
         time_surface = self.time_font.render(self.format_time(self.elapsed_time), True, (255, 255, 255))
 
-        self.display_surface.blit(self.star_icon, (WINDOW_WIDTH - 250, 35)) 
-        self.display_surface.blit(score_surface, (WINDOW_WIDTH - 200, 35))  
+        self.display_surface.blit(self.star_icon, (WINDOW_WIDTH - 255, 40)) 
+        self.display_surface.blit(score_surface, (WINDOW_WIDTH - 200, 50))  
 
         if self.game_started and not self.game_over:
             self.elapsed_time = int((pygame.time.get_ticks() - self.start_time) / 1000) 
-            self.display_surface.blit(self.clock_icon, (WINDOW_WIDTH // 2 - 45,80))  
-            self.display_surface.blit(time_surface, (WINDOW_WIDTH // 2 - 12, 80)) 
+            self.display_surface.blit(self.clock_icon, (WINDOW_WIDTH // 2 - 45, 84))  
+            self.display_surface.blit(time_surface, (WINDOW_WIDTH // 2 - 12, 90)) 
 
         outline_color = (0, 0, 0)  
-        outline_surface = self.font.render(f'Score: {self.score}', True, outline_color)
-        self.display_surface.blit(outline_surface, (WINDOW_WIDTH - 202, 37))  
+        outline_surface = self.font.render(f'Score {self.score}', True, outline_color)
+        self.display_surface.blit(outline_surface, (WINDOW_WIDTH - 202, 48))  
 
         outline_surface_time = self.time_font.render(self.format_time(self.elapsed_time), True, outline_color)
-        self.display_surface.blit(outline_surface_time, (WINDOW_WIDTH // 2 - 10, 80))  
-
+        self.display_surface.blit(outline_surface_time, (WINDOW_WIDTH // 2 - 10, 88))  
+    
     def format_time(self, seconds):
         minutes = seconds // 60
         seconds = seconds % 60
-        return f'{minutes:02}:{seconds:02}'
+        return f'{minutes:02}.{seconds:02}'
 
     def draw_wave(self):
-        wave_surface = self.font.render(f'Wave {self.current_wave}', True, (255, 255, 255))
-        outline_color = (0, 0, 0)
+        wave_surface = self.font.render(f'Wave {self.current_wave}', True, (0, 0, 0))
+        outline_color = (255, 255, 255)
         outline_surface = self.font.render(f'Wave {self.current_wave}', True, outline_color)
-        self.display_surface.blit(outline_surface, (WINDOW_WIDTH // 2 - 50, 40))  
-        self.display_surface.blit(wave_surface, (WINDOW_WIDTH // 2 - 48, 40)) 
+        self.display_surface.blit(outline_surface, (WINDOW_WIDTH // 2 - 50, 48))  
+        self.display_surface.blit(wave_surface, (WINDOW_WIDTH // 2 - 48, 48)) 
         
     def draw_countdown(self):
         countdown_surface = self.countdown_font.render(self.countdown_text, True, (255, 255, 255))
@@ -248,14 +366,14 @@ class Game:
         final_score_outline = self.font.render(f'Final Score: {self.score}', True, (0, 0, 0))  
         final_score_rect = final_score_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 50))
 
-        self.display_surface.blit(final_score_outline, (final_score_rect.x + 2, final_score_rect.y + 2))  
+        self.display_surface.blit(final_score_outline, (final_score_rect.x + 2, final_score_rect.y + 2))
         self.display_surface.blit(final_score_surface, final_score_rect)  
 
         final_time_surface = self.font.render(f'Time Survived: {self.format_time(self.elapsed_time)}', True, (255, 255, 255))
         final_time_outline = self.font.render(f'Time Survived: {self.format_time(self.elapsed_time)}', True, (0, 0, 0))  
         final_time_rect = final_time_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 20))
 
-        self.display_surface.blit(final_time_outline, ( final_time_rect.x + 2, final_time_rect.y + 2))  
+        self.display_surface.blit(final_time_outline, (final_time_rect.x + 2, final_time_rect.y + 2))  
         self.display_surface.blit(final_time_surface, final_time_rect)  
         pygame.display.update()
 
@@ -268,7 +386,7 @@ class Game:
         else:
             self.play_again_button['image'] = self.play_again_button_normal
 
-        if self.exit_button['rect'].collidepoint(mouse_x, mouse_y):
+        if self.exit_button['rect'].collidepoint (mouse_x, mouse_y):
             self.exit_button['image'] = self.exit_button_hover 
             if pygame.mouse.get_pressed()[0]: 
                 self.running = False  
@@ -335,13 +453,21 @@ class Game:
                 self.all_sprites.update(dt)
                 self.bullet_collision()
                 self.player_collision()
-                
+                self.update()  
+
+                current_time = pygame.time.get_ticks()
+                if current_time - self.ability_spawn_time >= self.ability_spawn_interval * 1000:  
+                    self.spawn_ability()
+                    self.ability_spawn_time = current_time  
+
                 if self.game_over: 
                     self.display_game_over()  
                     self.handle_game_over_input()  
                 else:
-                    self.all_sprites.draw(self.player.rect.center)
+                    self.all_sprites.draw(self.player.rect.center)  
+                    self.ability_sprites.draw(self.display_surface)  
                     self.draw_health_bar()
+                    self.draw_active_abilities()
                     self.draw_score_and_time()  
                     self.draw_wave() 
                     current_wave_time = (pygame.time.get_ticks() - self.wave_start_time) / 1000
