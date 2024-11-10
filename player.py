@@ -19,9 +19,8 @@ class Player(pygame.sprite.Sprite):
         self.max_health = MAX_HEALTH
         self.current_health = MAX_HEALTH
 
-        # Ability attributes
         self.invincible = False
-        self.invincibility_duration = 10  # seconds
+        self.invincibility_duration = 10 
         self.invincibility_timer = 0
         
         self.active_abilities = []
@@ -70,7 +69,7 @@ class Player(pygame.sprite.Sprite):
         self.image = self.frames[self.state][int(self.frame_index) % len(self.frames[self.state])]
 
     def take_damage(self, amount):
-        if not self.invincible:  # Only take damage if not invincible
+        if not self.invincible:  
             self.current_health -= amount
             if self.current_health <= 0:
                 self.current_health = 0
@@ -82,7 +81,7 @@ class Player(pygame.sprite.Sprite):
             self.current_health = self.max_health
 
     def die(self):
-        print("Player has died.")
+        print("MBLEDOSS.")
         self.kill() 
 
     def is_alive(self):
@@ -92,12 +91,12 @@ class Player(pygame.sprite.Sprite):
         self.invincible = True
         self.invincibility_start_time = pygame.time.get_ticks()
         self.invincibility_duration = duration
-        self.active_abilities.append(('invincibility', duration))  # Start the timer
+        self.active_abilities.append(('invincibility', duration)) 
     
     def increase_speed(self, amount, duration):
         self.speed += amount
         if self.speed > self.max_speed:
-            self.speed = self.max_speed  # Ensure speed does not exceed max speed
+            self.speed = self.max_speed  
         self.speed_boost_start_time = pygame.time.get_ticks()
         self.speed_boost_duration = duration
         self.active_abilities.append(('speed', duration))
@@ -110,17 +109,14 @@ class Player(pygame.sprite.Sprite):
         self.move(dt)
         self.animate(dt)
 
-        # Handle invincibility duration
         if self.invincible and (pygame.time.get_ticks() - self.invincibility_start_time >= self.invincibility_duration * 1000):
             self.invincible = False
 
-        # Check if speed boost duration has expired
         if hasattr(self, 'speed_boost_start_time'):
             if pygame.time.get_ticks() - self.speed_boost_start_time >= self.speed_boost_duration * 1000:
                 self.reset_speed()
-                del self.speed_boost_start_time  # Clean up the attribute
+                del self.speed_boost_start_time  
 
-        # Remove expired abilities
         current_time = pygame.time.get_ticks()
         self.active_abilities = [
             (ability, duration) for ability, duration in self.active_abilities

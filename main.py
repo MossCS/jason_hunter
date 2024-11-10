@@ -407,8 +407,8 @@ class Game:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-                # if event.type == self.enemy_event and self.game_started:
-                #     Enemy(choice(self.spawn_positions), choice(list(self.enemy_frames.values())), (self.all_sprites, self.enemy_sprites), self.player, self.collision_sprites)
+                if event.type == self.enemy_event and self.game_started:
+                    Enemy(choice(self.spawn_positions), choice(list(self.enemy_frames.values())), (self.all_sprites, self.enemy_sprites), self.player, self.collision_sprites)
 
             mouse_x, mouse_y = pygame.mouse.get_pos()
             if self.start_button['rect'].collidepoint(mouse_x, mouse_y):
