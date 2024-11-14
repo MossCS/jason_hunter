@@ -34,6 +34,8 @@ class Game:
 
         self.shoot_sound = pygame.mixer.Sound(join('audio', 'shoot.wav'))
         self.shoot_sound.set_volume(0.2)
+        self.collect_sound = pygame.mixer.Sound(join('audio', 'collect.mp3'))
+        self.collect_sound.set_volume(0.2)
         self.impact_sound = pygame.mixer.Sound(join('audio', 'impact.ogg'))
         pygame.mixer.music.load(join('audio', 'music.wav'))
         pygame.mixer.music.set_volume(0.4)
@@ -120,6 +122,7 @@ class Game:
         self.wave_start_time = 0
         self.current_wave = 1
         self.wave_active = False
+        self.boss_active = False
 
         self.ability_spawn_times = {} 
         self.ability_spawn_time = 0  
@@ -212,7 +215,7 @@ class Game:
             else:
                 self.heal_text = None
         
-        # self.player.active_abilities = [(ability, duration) for ability, duration in self.player.active_abilities if duration > (current_time - self.start_time) // 1000]
+        self.player.active_abilities = [(ability, start_time) for ability, start_time in self.player.active_abilities if (current_time - start_time) < 10000]
         
         for spawn_pos in list(self.ability_spawn_times.keys()):
             if current_time - self.ability_spawn_times[spawn_pos] >= self.ability_spawn_interval * 1000:
@@ -253,13 +256,14 @@ class Game:
 
         collected_abilities = pygame.sprite.spritecollide(self.player, self.ability_sprites, True)
         for ability in collected_abilities:
+            self.collect_sound.play()
             self.collect_ability(ability)
 
     def collect_ability(self, ability):
         current_time = pygame.time.get_ticks()  
         if ability.ability_type == 'heal':
-            self.player.heal(10)
-            self.heal_text = "10"  
+            self.player.heal(50)
+            self.heal_text = "50"  
             self.heal_text_start_time = current_time  
             self.heal_text_opacity = 255
         elif ability.ability_type == 'speed':
@@ -338,6 +342,19 @@ class Game:
 
         outline_surface_time = self.time_font.render(self.format_time(self.elapsed_time), True, outline_color)
         self.display_surface.blit(outline_surface_time, (WINDOW_WIDTH // 2 - 10, 88))  
+        
+    def draw_boss_health_bar(self):
+        if self.boss_active:
+            health_ratio = self.boss_health / 1000  
+            
+            pygame.draw.rect(self.display_surface, (0, 0, 0), (WINDOW_WIDTH / 2 - 200, 100, 404, 34))  
+            pygame.draw.rect(self.display_surface, (255, 0, 0), (WINDOW_WIDTH / 2 - 200, 100, 400, 30))  
+            pygame.draw.rect(self.display_surface, (0, 255, 0), (WINDOW_WIDTH / 2 - 200, 100, 400 * health_ratio, 30)) 
+            
+            health_text = f'Boss Health: {self.boss_health}/1000'
+            font = pygame.font.Font(join('fonts', 'Mario-Kart-DS.ttf'), 24)
+            health_surface = font.render(health_text, True, (255, 255, 255))
+            self.display_surface.blit(health_surface, (WINDOW_WIDTH / 2 - health_surface.get_width() / 2, 70))
     
     def format_time(self, seconds):
         minutes = seconds // 60
