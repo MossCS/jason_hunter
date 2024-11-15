@@ -91,6 +91,9 @@ class Game:
         self.heal_text_duration = 1000
         
         self.hit_enemies = set() 
+        self.enemy_speed = ENEMY_SPEED
+        self.spawn_interval = SPAWN_INTERVAL
+        self.last_spawn_time = pygame.time.get_ticks()
         self.frame_delay = FRAME_DELAY
         self.start_time = 0 
         self.elapsed_time = 0  
@@ -425,7 +428,9 @@ class Game:
                 if event.type == pygame.QUIT:
                     self.running = False
                 if event.type == self.enemy_event and self.game_started:
-                    Enemy(choice(self.spawn_positions), choice(list(self.enemy_frames.values())), (self.all_sprites, self.enemy_sprites), self.player, self.collision_sprites)
+                    if pygame.time.get_ticks() - self.last_spawn_time >= self.spawn_interval:
+                        Enemy(choice(self.spawn_positions), choice(list(self.enemy_frames.values())), (self.all_sprites, self.enemy_sprites), self.player, self.collision_sprites, self.enemy_speed)
+                        self.last_spawn_time = pygame.time.get_ticks()
 
             mouse_x, mouse_y = pygame.mouse.get_pos()
             if self.start_button['rect'].collidepoint(mouse_x, mouse_y):
@@ -487,10 +492,15 @@ class Game:
                     self.draw_active_abilities()
                     self.draw_score_and_time()  
                     self.draw_wave() 
+                    
                     current_wave_time = (pygame.time.get_ticks() - self.wave_start_time) / 1000
                     if current_wave_time >= self.wave_duration:  
                         self.current_wave += 1  
-                        self.wave_start_time = pygame.time.get_ticks()  
+                        self.wave_start_time = pygame.time.get_ticks() 
+                         
+                        self.enemy_speed += 20
+                        self.spawn_interval = max(100, self.spawn_interval - 50)
+                        
                     pygame.display.update()
             else:
                 self.display_surface.fill('black')
