@@ -1,0 +1,10 @@
+pygame
+moviepy
+python-settings
+player
+ability
+sprites
+groups
+random
+numpy
+PyTMX
